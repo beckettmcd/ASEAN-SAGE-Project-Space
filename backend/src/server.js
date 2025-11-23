@@ -220,6 +220,32 @@ app.use('/api/exports', exportRoutes);
 app.use('/api/donors', donorRoutes);
 app.use('/api', genericRoutes);
 
+// Catch-all for non-API routes (helpful for debugging)
+app.use((req, res, next) => {
+  // If it's not an API route and not the health endpoint, provide helpful message
+  if (!req.path.startsWith('/api') && req.path !== '/health') {
+    return res.status(404).json({
+      error: 'Not Found',
+      message: 'This is the API server. API endpoints are available at /api/*',
+      path: req.path,
+      availableEndpoints: [
+        '/api/auth/login',
+        '/api/auth/register',
+        '/api/dashboard',
+        '/api/tors',
+        '/api/assignments',
+        '/api/indicators',
+        '/api/budgets',
+        '/api/risks',
+        '/api/evidence',
+        '/api/donors',
+        '/health'
+      ]
+    });
+  }
+  next();
+});
+
 // Error handling
 app.use(notFound);
 app.use(errorHandler);
