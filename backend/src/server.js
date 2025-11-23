@@ -22,18 +22,25 @@ import donorRoutes from './routes/donors.js';
 
 dotenv.config();
 
+// Detect serverless environment early (before validation)
+const isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.FUNCTION_NAME;
+
 // Validate required environment variables
 const requiredEnvVars = ['JWT_SECRET'];
 const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
 
 if (missingEnvVars.length > 0) {
   console.error('✗ Missing required environment variables:', missingEnvVars.join(', '));
-  console.error('Please set these variables in your .env file');
-  process.exit(1);
+  console.error('Please set these variables in your .env file or Vercel environment variables');
+  // In serverless, don't exit - let the error handler catch it
+  // This allows Vercel to return a proper error response
+  if (!isServerless) {
+    process.exit(1);
+  }
 }
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 
 // Middleware
 app.use(helmet());
@@ -101,8 +108,6 @@ app.use(errorHandler);
 
 // Database connection and server start
 // Only start server if NOT in serverless environment (Vercel, AWS Lambda, etc.)
-const isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.FUNCTION_NAME;
-
 const startServer = async () => {
   try {
     await sequelize.authenticate();
