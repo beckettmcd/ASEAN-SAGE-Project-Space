@@ -42,6 +42,29 @@ api.interceptors.response.use(
     // Handle HTTP status codes
     const status = error.response?.status;
     
+    // Helper function to extract error message from response data
+    const extractErrorMessage = (data) => {
+      if (!data) return null;
+      // Handle string directly
+      if (typeof data === 'string') return data;
+      // Handle object with message property
+      if (typeof data === 'object' && data.message && typeof data.message === 'string') {
+        return data.message;
+      }
+      // Handle object with error property (string)
+      if (typeof data === 'object' && data.error) {
+        if (typeof data.error === 'string') return data.error;
+        if (typeof data.error === 'object' && data.error.message) return data.error.message;
+      }
+      // Handle details array
+      if (Array.isArray(data.details) && data.details.length > 0) {
+        const firstDetail = data.details[0];
+        if (typeof firstDetail === 'string') return firstDetail;
+        if (typeof firstDetail === 'object' && firstDetail.message) return firstDetail.message;
+      }
+      return null;
+    };
+    
     if (status === 401) {
       // Unauthorized - clear auth and redirect to login
       try {
@@ -54,18 +77,19 @@ api.interceptors.response.use(
       if (window.location.pathname !== '/login') {
         window.location.href = '/login';
       }
+      error.message = extractErrorMessage(error.response?.data) || 'Authentication required. Please log in.';
     } else if (status === 403) {
-      error.message = error.response?.data?.error || 'You do not have permission to perform this action.';
+      error.message = extractErrorMessage(error.response?.data) || 'You do not have permission to perform this action.';
     } else if (status === 404) {
-      error.message = error.response?.data?.error || 'The requested resource was not found.';
+      error.message = extractErrorMessage(error.response?.data) || 'The requested resource was not found.';
     } else if (status === 409) {
-      error.message = error.response?.data?.error || 'A conflict occurred. The resource may already exist.';
+      error.message = extractErrorMessage(error.response?.data) || 'A conflict occurred. The resource may already exist.';
     } else if (status === 422) {
-      error.message = error.response?.data?.error || 'Validation error. Please check your input.';
+      error.message = extractErrorMessage(error.response?.data) || 'Validation error. Please check your input.';
     } else if (status >= 500) {
-      error.message = error.response?.data?.error || 'Server error. Please try again later.';
+      error.message = extractErrorMessage(error.response?.data) || 'Server error. Please try again later.';
     } else if (status >= 400) {
-      error.message = error.response?.data?.error || error.message || 'An error occurred.';
+      error.message = extractErrorMessage(error.response?.data) || error.message || 'An error occurred.';
     }
 
     return Promise.reject(error);

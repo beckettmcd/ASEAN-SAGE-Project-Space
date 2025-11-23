@@ -19,7 +19,32 @@ export const LoginPage = () => {
       await login({ email, password });
       navigate('/');
     } catch (err) {
-      setError(err.response?.data?.error || 'Login failed');
+      // Extract error message - handle both string and object responses
+      let errorMessage = 'Login failed';
+      
+      if (err.response?.data) {
+        const errorData = err.response.data;
+        // Handle object with message property
+        if (typeof errorData === 'object' && errorData.message) {
+          errorMessage = errorData.message;
+        } 
+        // Handle object with error property (string)
+        else if (typeof errorData.error === 'string') {
+          errorMessage = errorData.error;
+        }
+        // Handle string directly
+        else if (typeof errorData === 'string') {
+          errorMessage = errorData;
+        }
+        // Handle object with details array
+        else if (errorData.details && Array.isArray(errorData.details) && errorData.details.length > 0) {
+          errorMessage = errorData.details[0].message || errorData.message || errorMessage;
+        }
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
