@@ -25,6 +25,25 @@ dotenv.config();
 // Detect serverless environment early (before validation)
 const isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.FUNCTION_NAME;
 
+// Global error handlers - MUST be set up early to catch unhandled errors
+// These prevent the function from crashing on unhandled promise rejections
+if (isServerless) {
+  // In serverless mode, catch unhandled rejections but don't crash
+  // Let the error handler middleware respond with proper HTTP status
+  process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise);
+    console.error('Reason:', reason);
+    // Don't exit - let the error handler respond
+  });
+
+  // Catch uncaught exceptions as a safety net
+  process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception:', error);
+    // In serverless, we can't exit - the function will be terminated by the platform
+    // Log the error so it appears in Vercel logs
+  });
+}
+
 // Validate required environment variables
 const requiredEnvVars = ['JWT_SECRET'];
 const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
@@ -64,6 +83,45 @@ const limiter = rateLimit({
   max: 100 // limit each IP to 100 requests per windowMs
 });
 app.use('/api/', limiter);
+
+// Startup validation middleware - check critical environment variables
+// This runs BEFORE database connection to provide helpful error messages
+app.use((req, res, next) => {
+  // Skip validation for health endpoint
+  if (req.path === '/health') {
+    return next();
+  }
+
+  // Check for missing critical environment variables
+  const errors = [];
+
+  if (isServerless && !process.env.DATABASE_URL && !process.env.DB_HOST && process.env.DB_TYPE !== 'postgres') {
+    errors.push({
+      variable: 'DATABASE_URL',
+      message: 'DATABASE_URL is required in serverless environment. Please set it in Vercel environment variables.',
+      help: 'Go to Vercel Dashboard → Settings → Environment Variables → Add DATABASE_URL'
+    });
+  }
+
+  if (!process.env.JWT_SECRET) {
+    errors.push({
+      variable: 'JWT_SECRET',
+      message: 'JWT_SECRET is required for authentication.',
+      help: 'Set JWT_SECRET in your environment variables'
+    });
+  }
+
+  if (errors.length > 0) {
+    return res.status(503).json({
+      error: 'Service configuration error',
+      message: 'Missing required environment variables',
+      details: errors,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  next();
+});
 
 // Database connection middleware (for serverless environments)
 // Ensures database is connected before handling requests
@@ -195,6 +253,9 @@ if (!isServerless) {
   // In serverless mode, just ensure database connection is ready
   // Connection will be established on first request via middleware
   console.log('✓ Running in serverless mode');
+  console.log(`✓ Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`✓ DATABASE_URL configured: ${!!process.env.DATABASE_URL}`);
+  console.log(`✓ JWT_SECRET configured: ${!!process.env.JWT_SECRET}`);
 }
 
 export default app;
