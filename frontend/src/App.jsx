@@ -31,7 +31,8 @@ function App() {
       <AuthProvider>
         <BrowserRouter>
           <Routes>
-            <Route path="/login" element={<LoginPage />} />
+            {/* TEMPORARY: Disabled login - redirect to dashboard */}
+            <Route path="/login" element={<Navigate to="/" replace />} />
             
             <Route
               path="/"

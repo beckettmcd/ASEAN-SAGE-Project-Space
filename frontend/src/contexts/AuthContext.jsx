@@ -16,23 +16,60 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // TEMPORARY: Auto-login as admin - bypassing actual authentication
+    // TODO: Remove this and restore normal login flow
+    const autoLoginAdmin = () => {
+      const adminUser = {
+        id: 'admin-auto-login-temp',
+        email: 'admin@sage.org',
+        firstName: 'Admin',
+        lastName: 'User',
+        role: 'Admin',
+        isActive: true,
+        organisationId: null, // Will be set by backend if needed
+        organisation: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      
+      // Set a dummy token for API calls (backend may reject this, but UI will work)
+      const dummyToken = 'auto-login-admin-token-bypass';
+      
+      try {
+        localStorage.setItem('token', dummyToken);
+        localStorage.setItem('user', JSON.stringify(adminUser));
+        setUser(adminUser);
+        console.log('Auto-logged in as admin (bypass mode)');
+      } catch (error) {
+        console.error('Error saving to localStorage:', error);
+        // Still set user in state even if localStorage fails
+        setUser(adminUser);
+      }
+    };
+
     try {
       const token = localStorage.getItem('token');
       const savedUser = localStorage.getItem('user');
       
-      if (token && savedUser) {
+      // If no saved user, auto-login as admin
+      if (!token || !savedUser) {
+        autoLoginAdmin();
+      } else {
         try {
           const parsedUser = JSON.parse(savedUser);
           setUser(parsedUser);
         } catch (parseError) {
           console.error('Error parsing saved user data:', parseError);
-          // Clear corrupted data
+          // Clear corrupted data and auto-login as admin
           localStorage.removeItem('user');
           localStorage.removeItem('token');
+          autoLoginAdmin();
         }
       }
     } catch (error) {
       console.error('Error accessing localStorage:', error);
+      // Auto-login as admin on error
+      autoLoginAdmin();
     } finally {
       setLoading(false);
     }
