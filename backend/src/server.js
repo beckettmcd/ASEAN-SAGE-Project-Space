@@ -69,24 +69,84 @@ app.use('/api/', limiter);
 // Ensures database is connected before handling requests
 // This must come BEFORE routes so connection is established before route handlers run
 let dbConnected = false;
+let dbConnecting = false; // Prevent concurrent connection attempts
+let connectionPromise = null;
+
 app.use(async (req, res, next) => {
   try {
-    // Only authenticate if not already connected (for serverless cold starts)
-    if (!dbConnected) {
-      await sequelize.authenticate();
-      dbConnected = true;
-      console.log('✓ Database connection established (serverless)');
+    // Skip database check for health endpoint (allows health checks even if DB is down)
+    if (req.path === '/health') {
+      return next();
     }
+
+    // If already connected, proceed immediately
+    if (dbConnected) {
+      return next();
+    }
+
+    // If connection is in progress, wait for it
+    if (dbConnecting && connectionPromise) {
+      await connectionPromise;
+      return next();
+    }
+
+    // Start new connection attempt
+    dbConnecting = true;
+    connectionPromise = sequelize.authenticate()
+      .then(() => {
+        dbConnected = true;
+        dbConnecting = false;
+        console.log('✓ Database connection established (serverless)');
+      })
+      .catch((err) => {
+        dbConnecting = false;
+        dbConnected = false; // Reset on failure to allow retry
+        throw err;
+      });
+
+    await connectionPromise;
     next();
   } catch (error) {
     console.error('Database connection error:', error);
-    next(error);
+    // Provide more detailed error information
+    const errorDetails = {
+      name: error.name || 'DatabaseConnectionError',
+      message: error.message || 'Failed to connect to database',
+      ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
+    };
+    console.error('Error details:', errorDetails);
+    
+    // Create a proper error object for the error handler
+    const dbError = new Error('Database connection failed');
+    dbError.name = error.name || 'SequelizeConnectionError';
+    dbError.originalError = error;
+    next(dbError);
   }
 });
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+// Health check endpoint (doesn't require database connection)
+app.get('/health', async (req, res) => {
+  const health = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development',
+    serverless: !!isServerless
+  };
+
+  // Optionally check database connection (but don't fail if it's down)
+  try {
+    if (dbConnected) {
+      await sequelize.authenticate();
+      health.database = 'connected';
+    } else {
+      health.database = 'not_connected';
+    }
+  } catch (error) {
+    health.database = 'error';
+    health.databaseError = error.message;
+  }
+
+  res.json(health);
 });
 
 // API Routes

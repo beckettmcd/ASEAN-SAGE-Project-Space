@@ -29,14 +29,30 @@ if (usePostgres) {
       min: 0,
       acquire: 30000,
       idle: 10000
+    },
+    // Add retry logic for connection
+    retry: {
+      max: 3,
+      match: [
+        /ETIMEDOUT/,
+        /EHOSTUNREACH/,
+        /ECONNREFUSED/,
+        /ECONNRESET/,
+        /SequelizeConnectionError/
+      ]
     }
   };
 
   if (process.env.DATABASE_URL) {
     // Vercel Postgres or other providers that use DATABASE_URL
     sequelize = new Sequelize(process.env.DATABASE_URL, config);
-  } else {
-    // Individual connection parameters
+    console.log('✓ Using PostgreSQL database (DATABASE_URL)');
+  } else if (isServerless) {
+    // In serverless but no DATABASE_URL - this will likely fail, but provide helpful error
+    console.warn('⚠️  WARNING: Running in serverless mode but DATABASE_URL is not set.');
+    console.warn('⚠️  Please set DATABASE_URL in your Vercel environment variables.');
+    console.warn('⚠️  Attempting to use individual connection parameters...');
+    
     sequelize = new Sequelize(
       process.env.DB_NAME || 'sage_tracker',
       process.env.DB_USER || 'postgres',
@@ -47,9 +63,21 @@ if (usePostgres) {
         ...config
       }
     );
+    console.log('✓ Using PostgreSQL database (individual parameters)');
+  } else {
+    // Individual connection parameters (non-serverless)
+    sequelize = new Sequelize(
+      process.env.DB_NAME || 'sage_tracker',
+      process.env.DB_USER || 'postgres',
+      process.env.DB_PASSWORD || '',
+      {
+        host: process.env.DB_HOST || 'localhost',
+        port: process.env.DB_PORT || 5432,
+        ...config
+      }
+    );
+    console.log('✓ Using PostgreSQL database (individual parameters)');
   }
-  
-  console.log('✓ Using PostgreSQL database');
 } else {
   // SQLite for local development
   sequelize = new Sequelize({
