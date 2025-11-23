@@ -19,13 +19,19 @@ export const LoginPage = () => {
       await login({ email, password });
       navigate('/');
     } catch (err) {
+      // Log the full error for debugging
+      console.error('Login error:', err);
+      console.error('Error response:', err.response);
+      console.error('Error data:', err.response?.data);
+      console.error('Error message:', err.message);
+      
       // Extract error message - handle both string and object responses
       let errorMessage = 'Login failed';
       
       if (err.response?.data) {
         const errorData = err.response.data;
         // Handle object with message property
-        if (typeof errorData === 'object' && errorData.message) {
+        if (typeof errorData === 'object' && errorData.message && typeof errorData.message === 'string') {
           errorMessage = errorData.message;
         } 
         // Handle object with error property (string)
@@ -38,7 +44,19 @@ export const LoginPage = () => {
         }
         // Handle object with details array
         else if (errorData.details && Array.isArray(errorData.details) && errorData.details.length > 0) {
-          errorMessage = errorData.details[0].message || errorData.message || errorMessage;
+          const firstDetail = errorData.details[0];
+          if (typeof firstDetail === 'string') {
+            errorMessage = firstDetail;
+          } else if (typeof firstDetail === 'object' && firstDetail.message) {
+            errorMessage = firstDetail.message;
+          } else if (errorData.message) {
+            errorMessage = errorData.message;
+          }
+        }
+        // If we still have the default, try to get any string property
+        if (errorMessage === 'Login failed' && typeof errorData === 'object') {
+          // Try common error message properties
+          errorMessage = errorData.message || errorData.error || errorData.msg || errorMessage;
         }
       } else if (err.message) {
         errorMessage = err.message;

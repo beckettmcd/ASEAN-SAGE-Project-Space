@@ -39,20 +39,30 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = async (credentials) => {
-    const response = await authApi.login(credentials);
-    const { user, token } = response.data;
-    
     try {
-      localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify(user));
-      setUser(user);
+      const response = await authApi.login(credentials);
+      const { user, token } = response.data;
+      
+      if (!user || !token) {
+        throw new Error('Invalid response from server: missing user or token');
+      }
+      
+      try {
+        localStorage.setItem('token', token);
+        localStorage.setItem('user', JSON.stringify(user));
+        setUser(user);
+      } catch (error) {
+        console.error('Error saving to localStorage:', error);
+        // Still set user in state even if localStorage fails
+        setUser(user);
+      }
+      
+      return user;
     } catch (error) {
-      console.error('Error saving to localStorage:', error);
-      // Still set user in state even if localStorage fails
-      setUser(user);
+      // Re-throw the error so LoginPage can handle it
+      console.error('Login error in AuthContext:', error);
+      throw error;
     }
-    
-    return user;
   };
 
   const logout = () => {

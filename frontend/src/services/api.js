@@ -1,10 +1,14 @@
 import axios from 'axios';
 
+// Use environment variable for API URL in production, or relative path in development
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json'
-  }
+  },
+  timeout: 30000 // 30 second timeout
 });
 
 // Request interceptor to add auth token
