@@ -17,10 +17,18 @@ export const buildWhereClause = (query, allowedFilters) => {
   if (query.startDate || query.endDate) {
     where.createdAt = {};
     if (query.startDate) {
-      where.createdAt[Op.gte] = new Date(query.startDate);
+      const startDate = new Date(query.startDate);
+      if (isNaN(startDate.getTime())) {
+        throw new Error('Invalid startDate format. Expected ISO 8601 date string.');
+      }
+      where.createdAt[Op.gte] = startDate;
     }
     if (query.endDate) {
-      where.createdAt[Op.lte] = new Date(query.endDate);
+      const endDate = new Date(query.endDate);
+      if (isNaN(endDate.getTime())) {
+        throw new Error('Invalid endDate format. Expected ISO 8601 date string.');
+      }
+      where.createdAt[Op.lte] = endDate;
     }
   }
 

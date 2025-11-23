@@ -1,6 +1,8 @@
+import { safeParseInt } from './numbers.js';
+
 export const getPaginationParams = (req) => {
-  const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 20;
+  const page = Math.max(1, safeParseInt(req.query.page, 1));
+  const limit = Math.max(1, Math.min(100, safeParseInt(req.query.limit, 20))); // Max 100 items per page
   const offset = (page - 1) * limit;
 
   return { page, limit, offset };

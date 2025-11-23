@@ -260,15 +260,17 @@ export const getComprehensiveDashboard = async (req, res, next) => {
     });
 
     // Calculate LoE stats for each assignment
-    const assignmentsWithStats = assignments.map(assignment => {
-      const burnRate = assignment.contractedLoE > 0 
-        ? (parseFloat(assignment.actualLoE) / parseFloat(assignment.contractedLoE)) * 100 
+    const assignmentsWithStats = (assignments || []).map(assignment => {
+      const actualLoE = parseFloat(assignment.actualLoE || 0);
+      const contractedLoE = parseFloat(assignment.contractedLoE || 0);
+      const burnRate = contractedLoE > 0 
+        ? (actualLoE / contractedLoE) * 100 
         : 0;
       
       return {
         ...assignment.toJSON(),
         burnRate: Math.round(burnRate * 10) / 10,
-        remainingLoE: parseFloat(assignment.contractedLoE) - parseFloat(assignment.actualLoE)
+        remainingLoE: Math.max(0, contractedLoE - actualLoE)
       };
     });
 
@@ -298,29 +300,33 @@ export const getComprehensiveDashboard = async (req, res, next) => {
     });
 
     // Enhanced metrics
-    const totalActive = assignments.filter(a => a.status === 'Active').length;
-    const countriesEngaged = new Set(assignments.filter(a => a.countryId).map(a => a.countryId)).size;
-    const totalTAValue = assignments.reduce((sum, a) => sum + parseFloat(a.totalValue || 0), 0);
-    const avgBurnRate = assignments.length > 0
-      ? assignments.reduce((sum, a) => {
-          const burnRate = a.contractedLoE > 0 
-            ? (parseFloat(a.actualLoE) / parseFloat(a.contractedLoE)) * 100 
+    const assignmentsArray = assignments || [];
+    const totalActive = assignmentsArray.filter(a => a.status === 'Active').length;
+    const countriesEngaged = new Set(assignmentsArray.filter(a => a.countryId).map(a => a.countryId)).size;
+    const totalTAValue = assignmentsArray.reduce((sum, a) => sum + parseFloat(a.totalValue || 0), 0);
+    const avgBurnRate = assignmentsArray.length > 0
+      ? assignmentsArray.reduce((sum, a) => {
+          const actualLoE = parseFloat(a.actualLoE || 0);
+          const contractedLoE = parseFloat(a.contractedLoE || 0);
+          const burnRate = contractedLoE > 0 
+            ? (actualLoE / contractedLoE) * 100 
             : 0;
           return sum + burnRate;
-        }, 0) / assignments.length
+        }, 0) / assignmentsArray.length
       : 0;
     
     // Upcoming completions (ending this month)
     const endOfMonth = new Date();
     endOfMonth.setMonth(endOfMonth.getMonth() + 1);
     endOfMonth.setDate(0);
-    const upcomingCompletions = assignments.filter(a => {
+    const upcomingCompletions = assignmentsArray.filter(a => {
+      if (!a.endDate) return false;
       const endDate = new Date(a.endDate);
       return endDate <= endOfMonth && endDate >= new Date();
     }).length;
 
     // Unique consultants deployed
-    const consultantsDeployed = new Set(assignments.filter(a => a.consultantId).map(a => a.consultantId)).size;
+    const consultantsDeployed = new Set(assignmentsArray.filter(a => a.consultantId).map(a => a.consultantId)).size;
 
     // Recent activities - last 20 actions
     const recentActivities = [];
@@ -456,26 +462,43 @@ export const getComprehensiveDashboard = async (req, res, next) => {
     const allExpenses = await Expense.findAll({
       where: {
         assignmentId: {
-          [Op.in]: assignments.map(a => a.id)
+          [Op.in]: assignmentsArray.map(a => a.id).filter(Boolean)
         }
       }
     });
     totalExpenses = allExpenses.reduce((sum, expense) => sum + parseFloat(expense.amount || 0), 0);
     
     // Calculate fees from LoE entries and stored fees
-    for (const assignment of assignments) {
+    // Optimize: Fetch all fees in one query instead of N queries
+    const assignmentIds = assignmentsArray.map(a => a.id).filter(Boolean);
+    const allStoredFees = assignmentIds.length > 0 
+      ? await Fee.findAll({
+          where: { assignmentId: { [Op.in]: assignmentIds } }
+        })
+      : [];
+    
+    // Create a map of assignmentId -> fees for quick lookup
+    const feesByAssignment = allStoredFees.reduce((acc, fee) => {
+      if (!acc[fee.assignmentId]) {
+        acc[fee.assignmentId] = [];
+      }
+      acc[fee.assignmentId].push(fee);
+      return acc;
+    }, {});
+
+    // Calculate fees for each assignment
+    for (const assignment of assignmentsArray) {
       // Fees from LoE entries
+      const dailyRate = parseFloat(assignment.dailyRate) || 0;
       if (assignment.loeEntries && assignment.loeEntries.length > 0) {
         const loeFees = assignment.loeEntries.reduce((sum, loe) => 
-          sum + (parseFloat(loe.days) * parseFloat(assignment.dailyRate)), 0
+          sum + (parseFloat(loe.days || 0) * dailyRate), 0
         );
         totalFees += loeFees;
       }
       
-      // Stored fees
-      const storedFees = await Fee.findAll({
-        where: { assignmentId: assignment.id }
-      });
+      // Stored fees from the pre-fetched map
+      const storedFees = feesByAssignment[assignment.id] || [];
       totalFees += storedFees.reduce((sum, fee) => sum + parseFloat(fee.amount || 0), 0);
     }
 

@@ -1,7 +1,7 @@
 import { Assignment, Expense, Fee, LoEEntry } from '../models/index.js';
 
 // Get comprehensive financial data for an assignment
-export const getAssignmentFinancials = async (req, res) => {
+export const getAssignmentFinancials = async (req, res, next) => {
   try {
     const { id } = req.params;
 
@@ -21,9 +21,10 @@ export const getAssignmentFinancials = async (req, res) => {
 
     // Calculate fees from LoE entries
     const calculatedFees = [];
+    const dailyRate = parseFloat(assignment.dailyRate) || 0;
     if (assignment.loeEntries && assignment.loeEntries.length > 0) {
       for (const loeEntry of assignment.loeEntries) {
-        const feeAmount = parseFloat(loeEntry.days) * parseFloat(assignment.dailyRate);
+        const feeAmount = parseFloat(loeEntry.days || 0) * dailyRate;
         calculatedFees.push({
           id: `calculated-${loeEntry.id}`,
           feeType: 'DailyRate',
@@ -44,11 +45,11 @@ export const getAssignmentFinancials = async (req, res) => {
 
     // Calculate totals
     const totalFees = allFees.reduce((sum, fee) => sum + parseFloat(fee.amount || 0), 0);
-    const totalExpenses = assignment.expenses.reduce((sum, expense) => sum + parseFloat(expense.amount || 0), 0);
+    const totalExpenses = (assignment.expenses || []).reduce((sum, expense) => sum + parseFloat(expense.amount || 0), 0);
     const grandTotal = totalFees + totalExpenses;
 
     // Group expenses by category
-    const expensesByCategory = assignment.expenses.reduce((acc, expense) => {
+    const expensesByCategory = (assignment.expenses || []).reduce((acc, expense) => {
       const category = expense.category;
       if (!acc[category]) {
         acc[category] = {
@@ -90,7 +91,7 @@ export const getAssignmentFinancials = async (req, res) => {
     const monthlyData = {};
     
     // Add expenses to monthly data
-    assignment.expenses.forEach(expense => {
+    (assignment.expenses || []).forEach(expense => {
       const month = new Date(expense.date).toISOString().substring(0, 7); // YYYY-MM
       if (!monthlyData[month]) {
         monthlyData[month] = { month, fees: 0, expenses: 0, total: 0 };
@@ -138,22 +139,21 @@ export const getAssignmentFinancials = async (req, res) => {
         list: allFees
       },
       expenses: {
-        total: assignment.expenses.length,
+        total: (assignment.expenses || []).length,
         byCategory: expensesByCategory,
-        list: assignment.expenses
+        list: assignment.expenses || []
       },
       timeline: timelineData
     };
 
     res.json(financials);
   } catch (error) {
-    console.error('Error fetching assignment financials:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    next(error);
   }
 };
 
 // Get all assignments financial summary
-export const getAllAssignmentsFinancials = async (req, res) => {
+export const getAllAssignmentsFinancials = async (req, res, next) => {
   try {
     const assignments = await Assignment.findAll({
       include: [
@@ -172,17 +172,18 @@ export const getAllAssignmentsFinancials = async (req, res) => {
     for (const assignment of assignments) {
       // Calculate fees from LoE entries
       let assignmentFees = 0;
+      const dailyRate = parseFloat(assignment.dailyRate) || 0;
       if (assignment.loeEntries && assignment.loeEntries.length > 0) {
         assignmentFees = assignment.loeEntries.reduce((sum, loe) => 
-          sum + (parseFloat(loe.days) * parseFloat(assignment.dailyRate)), 0
+          sum + (parseFloat(loe.days || 0) * dailyRate), 0
         );
       }
       
       // Add stored fees
-      const storedFees = assignment.fees.reduce((sum, fee) => sum + parseFloat(fee.amount || 0), 0);
+      const storedFees = (assignment.fees || []).reduce((sum, fee) => sum + parseFloat(fee.amount || 0), 0);
       assignmentFees += storedFees;
 
-      const assignmentExpenses = assignment.expenses.reduce((sum, expense) => 
+      const assignmentExpenses = (assignment.expenses || []).reduce((sum, expense) => 
         sum + parseFloat(expense.amount || 0), 0
       );
 
@@ -211,7 +212,6 @@ export const getAllAssignmentsFinancials = async (req, res) => {
       assignments: assignmentsWithFinancials
     });
   } catch (error) {
-    console.error('Error fetching all assignments financials:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    next(error);
   }
 };

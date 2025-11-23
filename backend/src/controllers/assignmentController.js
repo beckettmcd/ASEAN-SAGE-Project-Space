@@ -44,15 +44,16 @@ export const getAssignmentById = async (req, res, next) => {
     }
 
     // Calculate LoE burn rate
-    const totalLoEUsed = assignment.loeEntries.reduce((sum, entry) => sum + parseFloat(entry.days), 0);
-    const burnRate = (totalLoEUsed / parseFloat(assignment.contractedLoE)) * 100;
+    const totalLoEUsed = assignment.loeEntries?.reduce((sum, entry) => sum + parseFloat(entry.days || 0), 0) || 0;
+    const contractedLoE = parseFloat(assignment.contractedLoE) || 0;
+    const burnRate = contractedLoE > 0 ? (totalLoEUsed / contractedLoE) * 100 : 0;
 
     res.json({ 
       assignment,
       stats: {
         totalLoEUsed,
         burnRate: burnRate.toFixed(2),
-        remainingLoE: parseFloat(assignment.contractedLoE) - totalLoEUsed
+        remainingLoE: Math.max(0, contractedLoE - totalLoEUsed)
       }
     });
   } catch (error) {

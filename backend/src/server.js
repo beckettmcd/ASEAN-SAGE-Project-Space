@@ -22,12 +22,31 @@ import donorRoutes from './routes/donors.js';
 
 dotenv.config();
 
+// Validate required environment variables
+const requiredEnvVars = ['JWT_SECRET'];
+const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
+
+if (missingEnvVars.length > 0) {
+  console.error('✗ Missing required environment variables:', missingEnvVars.join(', '));
+  console.error('Please set these variables in your .env file');
+  process.exit(1);
+}
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(helmet());
-app.use(cors());
+
+// CORS configuration
+const corsOptions = {
+  origin: process.env.NODE_ENV === 'production' 
+    ? (process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : [])
+    : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:5174'], // Default dev origins
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -38,6 +57,25 @@ const limiter = rateLimit({
   max: 100 // limit each IP to 100 requests per windowMs
 });
 app.use('/api/', limiter);
+
+// Database connection middleware (for serverless environments)
+// Ensures database is connected before handling requests
+// This must come BEFORE routes so connection is established before route handlers run
+let dbConnected = false;
+app.use(async (req, res, next) => {
+  try {
+    // Only authenticate if not already connected (for serverless cold starts)
+    if (!dbConnected) {
+      await sequelize.authenticate();
+      dbConnected = true;
+      console.log('✓ Database connection established (serverless)');
+    }
+    next();
+  } catch (error) {
+    console.error('Database connection error:', error);
+    next(error);
+  }
+});
 
 // Health check
 app.get('/health', (req, res) => {
@@ -62,6 +100,9 @@ app.use(notFound);
 app.use(errorHandler);
 
 // Database connection and server start
+// Only start server if NOT in serverless environment (Vercel, AWS Lambda, etc.)
+const isServerless = process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.FUNCTION_NAME;
+
 const startServer = async () => {
   try {
     await sequelize.authenticate();
@@ -82,7 +123,14 @@ const startServer = async () => {
   }
 };
 
-startServer();
+// Only start the server if not in a serverless environment
+if (!isServerless) {
+  startServer();
+} else {
+  // In serverless mode, just ensure database connection is ready
+  // Connection will be established on first request via middleware
+  console.log('✓ Running in serverless mode');
+}
 
 export default app;
 

@@ -40,9 +40,11 @@ export const getBudgetById = async (req, res, next) => {
     }
 
     // Calculate variance and burn rate
-    const variance = parseFloat(budget.allocatedAmount) - parseFloat(budget.actualSpend);
-    const variancePercentage = (variance / parseFloat(budget.allocatedAmount)) * 100;
-    const burnRate = (parseFloat(budget.actualSpend) / parseFloat(budget.allocatedAmount)) * 100;
+    const allocatedAmount = parseFloat(budget.allocatedAmount) || 0;
+    const actualSpend = parseFloat(budget.actualSpend) || 0;
+    const variance = allocatedAmount - actualSpend;
+    const variancePercentage = allocatedAmount > 0 ? (variance / allocatedAmount) * 100 : 0;
+    const burnRate = allocatedAmount > 0 ? (actualSpend / allocatedAmount) * 100 : 0;
 
     res.json({ 
       budget,

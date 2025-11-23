@@ -10,9 +10,13 @@ const api = axios.create({
 // Request interceptor to add auth token
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+    try {
+      const token = localStorage.getItem('token');
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    } catch (error) {
+      console.error('Error accessing localStorage in request interceptor:', error);
     }
     return config;
   },
@@ -23,11 +27,47 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
+    // Handle network errors (no response from server)
+    if (!error.response) {
+      if (error.code === 'ECONNABORTED' || error.message === 'Network Error') {
+        error.message = 'Network error. Please check your connection and try again.';
+      } else if (error.message.includes('timeout')) {
+        error.message = 'Request timeout. Please try again.';
+      } else {
+        error.message = error.message || 'Unable to connect to server. Please try again later.';
+      }
+      return Promise.reject(error);
     }
+
+    // Handle HTTP status codes
+    const status = error.response?.status;
+    
+    if (status === 401) {
+      // Unauthorized - clear auth and redirect to login
+      try {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+      } catch (e) {
+        console.error('Error clearing localStorage:', e);
+      }
+      // Only redirect if not already on login page
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+    } else if (status === 403) {
+      error.message = error.response?.data?.error || 'You do not have permission to perform this action.';
+    } else if (status === 404) {
+      error.message = error.response?.data?.error || 'The requested resource was not found.';
+    } else if (status === 409) {
+      error.message = error.response?.data?.error || 'A conflict occurred. The resource may already exist.';
+    } else if (status === 422) {
+      error.message = error.response?.data?.error || 'Validation error. Please check your input.';
+    } else if (status >= 500) {
+      error.message = error.response?.data?.error || 'Server error. Please try again later.';
+    } else if (status >= 400) {
+      error.message = error.response?.data?.error || error.message || 'An error occurred.';
+    }
+
     return Promise.reject(error);
   }
 );
