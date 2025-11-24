@@ -174,8 +174,20 @@ app.use(async (req, res, next) => {
     };
     console.error('Error details:', errorDetails);
     
+    // Provide helpful error message based on error type
+    let userMessage = 'Database connection failed';
+    if (error.message && error.message.includes('DATABASE_URL is required')) {
+      userMessage = 'DATABASE_URL environment variable is not set. Please configure it in Vercel.';
+    } else if (error.message && (error.message.includes('ECONNREFUSED') || error.message.includes('getaddrinfo'))) {
+      userMessage = 'Cannot connect to database server. Check DATABASE_URL and ensure the database is accessible.';
+    } else if (error.message && error.message.includes('password authentication failed')) {
+      userMessage = 'Database authentication failed. Check DATABASE_URL credentials.';
+    } else if (error.message && error.message.includes('database') && error.message.includes('does not exist')) {
+      userMessage = 'Database does not exist. Please create the database first.';
+    }
+    
     // Create a proper error object for the error handler
-    const dbError = new Error('Database connection failed');
+    const dbError = new Error(userMessage);
     dbError.name = error.name || 'SequelizeConnectionError';
     dbError.originalError = error;
     next(dbError);
@@ -188,20 +200,56 @@ app.get('/health', async (req, res) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development',
-    serverless: !!isServerless
+    serverless: !!isServerless,
+    config: {
+      hasDatabaseUrl: !!process.env.DATABASE_URL,
+      hasDbHost: !!process.env.DB_HOST,
+      hasJwtSecret: !!process.env.JWT_SECRET,
+      dbType: process.env.DB_TYPE || 'not set'
+    }
   };
 
-  // Optionally check database connection (but don't fail if it's down)
+  // Check database connection
   try {
     if (dbConnected) {
       await sequelize.authenticate();
-      health.database = 'connected';
+      health.database = {
+        status: 'connected',
+        connected: true
+      };
     } else {
-      health.database = 'not_connected';
+      // Try to connect
+      try {
+        await sequelize.authenticate();
+        dbConnected = true;
+        health.database = {
+          status: 'connected',
+          connected: true
+        };
+      } catch (connError) {
+        health.database = {
+          status: 'error',
+          connected: false,
+          error: connError.message,
+          errorName: connError.name,
+          ...(process.env.NODE_ENV === 'development' && { stack: connError.stack })
+        };
+      }
     }
   } catch (error) {
-    health.database = 'error';
-    health.databaseError = error.message;
+    health.database = {
+      status: 'error',
+      connected: false,
+      error: error.message,
+      errorName: error.name,
+      ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
+    };
+  }
+
+  // If database is not connected, change overall status
+  if (health.database && !health.database.connected) {
+    health.status = 'degraded';
+    health.message = 'Database connection failed. Check DATABASE_URL environment variable.';
   }
 
   res.json(health);
